@@ -452,6 +452,58 @@ function initializeApp() {
         }
         return null;
     }
+
+    // Função para mover relatório para nova pasta baseada na data
+    function moveReportToCorrectFolder(reportId, currentYear, currentMonth, newDate) {
+        console.log('Movendo relatório para pasta correta:', { reportId, currentYear, currentMonth, newDate });
+        
+        const dateInfo = getYearMonthFromDate(newDate);
+        if (!dateInfo) {
+            console.error('Data inválida para movimentação:', newDate);
+            return false;
+        }
+        
+        const { year: newYear, month: newMonth } = dateInfo;
+        
+        // Se já está na pasta correta, não precisa mover
+        if (currentYear === newYear && currentMonth === newMonth) {
+            console.log('Relatório já está na pasta correta');
+            return true;
+        }
+        
+        // Obter dados do relatório atual
+        const reportData = reportsData[currentYear][currentMonth][reportId];
+        if (!reportData) {
+            console.error('Relatório não encontrado para movimentação');
+            return false;
+        }
+        
+        // Criar estrutura da nova pasta se necessário
+        if (!reportsData[newYear]) {
+            reportsData[newYear] = {};
+        }
+        if (!reportsData[newYear][newMonth]) {
+            reportsData[newYear][newMonth] = {};
+        }
+        
+        // Mover relatório para nova pasta
+        reportsData[newYear][newMonth][reportId] = reportData;
+        
+        // Remover da pasta antiga
+        delete reportsData[currentYear][currentMonth][reportId];
+        
+        // Limpar pastas vazias
+        if (Object.keys(reportsData[currentYear][currentMonth]).length === 0) {
+            delete reportsData[currentYear][currentMonth];
+            if (Object.keys(reportsData[currentYear]).length === 0) {
+                delete reportsData[currentYear];
+            }
+        }
+        
+        console.log(`Relatório movido de ${currentYear}/${currentMonth} para ${newYear}/${newMonth}`);
+        return true;
+    }
+
     // Funções para persistência de dados
     function loadReportsFromStorage() {
         try {
@@ -501,12 +553,12 @@ function initializeApp() {
         saveInterval = setInterval(() => {
             if (currentReport) {
                 const now = new Date().toLocaleTimeString('pt-BR');
-                console.log(`🔄 Auto-save executado às ${now} para: ${currentReport.title}`);
+                console.log(`📄 Auto-save executado às ${now} para: ${currentReport.title}`);
                 
                 const updatedReport = {
                     title: reportTitleEl.textContent.trim() || `Relatório - ${new Date().toLocaleDateString('pt-BR')}`,
                     content: quill.getContents(),
-                    lastAutoSave: new Date().toISOString(), // Adicionar timestamp
+                    lastAutoSave: new Date().toISOString(),
                     reportDate: currentReport.reportDate,
                     createdDate: currentReport.createdDate
                 };
@@ -516,12 +568,12 @@ function initializeApp() {
                     reportsData[currentReport.year][currentReport.month][currentReport.id]) {
                     
                     reportsData[currentReport.year][currentReport.month][currentReport.id] = updatedReport;
-                    currentReport.content = updatedReport.content; // Atualizar referência local
+                    currentReport.content = updatedReport.content;
                     saveReportsToStorage();
                     
                     console.log(`✅ Auto-save concluído para: ${currentReport.title}`);
                 } else {
-                    console.error('❌ Relatório não encontrado na estrutura de dados para auto-save');
+                    console.error('⚠ Relatório não encontrado na estrutura de dados para auto-save');
                 }
             } else {
                 console.log('⏸️ Auto-save pausado - nenhum relatório selecionado');
@@ -751,7 +803,7 @@ function initializeApp() {
             }
         }
         
-        saveReportsToStorage(); // Salvar alterações
+        saveReportsToStorage();
         renderFolders(reportsData);
     }
 
@@ -784,7 +836,7 @@ function initializeApp() {
         };
         
         reportsData[year][month][newReportId] = newReport;
-        saveReportsToStorage(); // Salvar no localStorage
+        saveReportsToStorage();
         
         console.log('Relatório criado e salvo na estrutura de dados');
         
@@ -838,7 +890,7 @@ function initializeApp() {
                 }
             }
 
-            saveReportsToStorage(); // Salvar no localStorage
+            saveReportsToStorage();
 
             // Limpar interface
             if (saveInterval) {
@@ -855,7 +907,7 @@ function initializeApp() {
         }
     });
 
-    // Event listener para atualizar data do relatório
+    // Event listener para atualizar data do relatório - VERSÃO CORRIGIDA
     updateDateBtn.addEventListener('click', () => {
         if (!currentReport) return;
         
@@ -868,8 +920,30 @@ function initializeApp() {
         const newDisplayDate = formatDateForDisplay(newDate);
         console.log('Alterando data do relatório de', currentReport.reportDate, 'para', newDisplayDate);
         
-        // Atualizar dados do relatório na mesma pasta
-        const reportData = reportsData[currentReport.year][currentReport.month][currentReport.id];
+        // Obter informações da nova data
+        const newDateInfo = getYearMonthFromDate(newDisplayDate);
+        if (!newDateInfo) {
+            alert('Data inválida. Por favor, tente novamente.');
+            return;
+        }
+        
+        const { year: newYear, month: newMonth } = newDateInfo;
+        const oldYear = currentReport.year;
+        const oldMonth = currentReport.month;
+        const reportId = currentReport.id;
+        
+        console.log('Comparação de datas:', {
+            oldYear, oldMonth, 
+            newYear, newMonth,
+            needsMove: (newYear !== oldYear || newMonth !== oldMonth)
+        });
+        
+        // Obter dados atuais do relatório
+        const reportData = reportsData[oldYear][oldMonth][reportId];
+        if (!reportData) {
+            console.error('Dados do relatório não encontrados');
+            return;
+        }
         
         // Atualizar a data do relatório
         reportData.reportDate = newDisplayDate;
@@ -881,6 +955,44 @@ function initializeApp() {
         
         reportData.title = `${baseTitle} - ${newDisplayDate}`;
         
+        // CORREÇÃO: Só mover se realmente mudou o mês OU o ano
+        // Usando comparação de string para evitar problemas de tipo
+        const needsMove = (String(newYear) !== String(oldYear)) || (String(newMonth) !== String(oldMonth));
+        
+        if (needsMove) {
+            console.log(`📁 Movendo relatório de ${oldYear}/Mês ${oldMonth} para ${newYear}/Mês ${newMonth}`);
+            
+            // Criar estrutura da nova pasta se necessário
+            if (!reportsData[newYear]) {
+                reportsData[newYear] = {};
+            }
+            if (!reportsData[newYear][newMonth]) {
+                reportsData[newYear][newMonth] = {};
+            }
+            
+            // Mover relatório para nova pasta
+            reportsData[newYear][newMonth][reportId] = reportData;
+            
+            // Remover da pasta antiga
+            delete reportsData[oldYear][oldMonth][reportId];
+            
+            // Limpar pastas vazias
+            if (Object.keys(reportsData[oldYear][oldMonth]).length === 0) {
+                delete reportsData[oldYear][oldMonth];
+                if (Object.keys(reportsData[oldYear]).length === 0) {
+                    delete reportsData[oldYear];
+                }
+            }
+            
+            // Atualizar currentReport com nova localização
+            currentReport.year = newYear;
+            currentReport.month = newMonth;
+            
+            console.log(`✅ Relatório movido com sucesso para ${newYear}/Mês ${newMonth}`);
+        } else {
+            console.log(`📝 Apenas atualizando data no mesmo mês: ${oldYear}/Mês ${oldMonth}`);
+        }
+        
         // Atualizar currentReport
         currentReport.reportDate = newDisplayDate;
         currentReport.title = reportData.title;
@@ -888,17 +1000,25 @@ function initializeApp() {
         // Atualizar interface
         reportTitleEl.textContent = currentReport.title;
         
+        // Salvar alterações
         saveReportsToStorage();
+        
+        // Re-renderizar a estrutura de pastas
         renderFolders(reportsData);
         
-        // Re-selecionar o relatório (agora reordenado)
+        // Re-selecionar o relatório na localização atual
         setTimeout(() => {
             selectReport(currentReport.year, currentReport.month, currentReport.id);
         }, 100);
         
+        const moveMessage = needsMove ? 
+            ` O relatório foi movido para ${newYear}/Mês ${newMonth}.` : 
+            ' O relatório permaneceu na mesma pasta.';
+        
         console.log('Data e título atualizados! Novo título:', reportData.title);
-        alert(`Data alterada para ${newDisplayDate}. O título e a ordenação foram atualizados automaticamente.`);
+        alert(`Data alterada para ${newDisplayDate}. O título e a ordenação foram atualizados automaticamente.${moveMessage}`);
     });
+
     // Event listener para mudanças no título
     reportTitleEl.addEventListener('blur', () => {
         if (currentReport) {
